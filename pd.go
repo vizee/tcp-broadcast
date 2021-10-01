@@ -8,6 +8,7 @@ const (
 	tagListenerAccept uint32 = iota
 	tagConnSend
 	tagConnRecv
+	tagCancelIo
 )
 
 const (
@@ -42,6 +43,7 @@ var completeFuncs = [...]func(*PollDesc, int32) error{
 	tagListenerAccept: completeAccept,
 	tagConnSend:       completeSend,
 	tagConnRecv:       completeRecv,
+	tagCancelIo:       completeCancelIo,
 }
 
 func completeAccept(pd *PollDesc, res int32) error {
@@ -59,12 +61,17 @@ func completeRecv(pd *PollDesc, res int32) error {
 	return conn.completeRecv(int(res))
 }
 
+func completeCancelIo(pd *PollDesc, res int32) error {
+	pd2 := *(**PollDesc)(unsafe.Pointer(&pd.data))
+	delete(app.cancels, pd2)
+	delete(app.cancels, pd)
+	return nil
+}
+
 func completeIo(data uint64, res int32, _ uint32) error {
 	pd := *(**PollDesc)(unsafe.Pointer(&data))
 	pd.flags ^= flagPolling
-
 	if pd.flags&flagCancel != 0 {
-		completeCancel(pd)
 		return nil
 	}
 	return completeFuncs[pd.tag](pd, res)

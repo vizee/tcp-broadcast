@@ -85,16 +85,20 @@ func acceptConn(res int) error {
 	return app.ln.asyncAccept()
 }
 
-func completeCancel(pd *PollDesc) {
-	delete(app.cancels, pd)
-}
-
 func cancelIo(pd *PollDesc) error {
 	if !pd.polling() {
 		return nil
 	}
 	pd.flags |= flagCancel
-	return yaur.SubmitAsyncCancel(app.poll, pd.ptr(), pd.ptr())
+	cpd := &PollDesc{
+		tag:   tagCancelIo,
+		flags: flagPolling,
+		data:  pd.ptr(),
+	}
+	app.cancels[pd] = struct{}{}
+	app.cancels[cpd] = struct{}{}
+
+	return yaur.SubmitAsyncCancel(app.poll, cpd.ptr(), pd.ptr())
 }
 
 func pollLoop() {
@@ -120,6 +124,9 @@ func shutdown() {
 }
 
 func setup() error {
+	app.cancels = make(map[*PollDesc]struct{})
+	app.conns = make(map[*TcpConn]struct{})
+
 	poll, err := yaur.NewIoPoll(0, 256, completeIo)
 	if err != nil {
 		return err
